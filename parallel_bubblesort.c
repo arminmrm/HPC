@@ -10,8 +10,9 @@
 #include <unistd.h>
 #include <math.h>
 #include <pthread.h>
+#include <time.h>
 #include <stdlib.h>
-#define DIM 20
+#define DIM 100000
 #define NTHREADS 2
 
 int a[DIM], b[DIM],swapped = 0;
@@ -87,10 +88,6 @@ void v_initiate() {
     for(i = 0; i < DIM; i++)
         a[i] = rand() % DIM;
     
-    printf("Vetor Original\n");
-    for(i = 0; i < DIM; i++)
-        printf("%d ", a[i]);
-    printf("\n");
 }
 void printArray(int arr[], int size)
 {
@@ -111,23 +108,29 @@ void bubbleSort(int arr[], int n)
 }
 void * subsort(void *ind){
     int i = (int)ind;
+    int j;
     int mpoint=DIM/NTHREADS;
     int c[mpoint];
-    for(int j=0;j<mpoint;j++){
+    for(j=0;j<mpoint;j++){
         c[j] = a[j+i*DIM/NTHREADS];
     }
     bubbleSort(c, mpoint);
-    for(int j=0;j<mpoint;j++){
+    for(j=0;j<mpoint;j++){
         a[j+i*DIM/NTHREADS]=c[j];
     }
     return NULL;
 }
+double CLOCK(){
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return(t.tv_sec*1000)+(t.tv_nsec*1e-6);
+    }
 void * submerge(void *threadarg){
     struct thread_data *my_data;
     my_data = (struct thread_data *) threadarg;
     int i = my_data->i;
     int j =my_data->j;
-    int mpoint=DIM/(2^(j-1));
+    int mpoint = DIM/j;
     int l = i*mpoint;
     int r = l+mpoint-1;
     int m = l+(r-l)/2;
@@ -138,29 +141,39 @@ int main() {
     int i,j, blocks,m,par_impar = 0;
     pthread_t THREADS[NTHREADS];
     v_initiate();
+    double start, end;
+    start = CLOCK();
     m = DIM/NTHREADS;
+    printf("Original array: \n");
+    printArray(a, DIM);
+    printf("%d\n",a[0]);
     for(i=0;i<NTHREADS;i++){
         pthread_create(&THREADS[i],NULL, subsort, (void *)i);
     }
     for(i=0;i<NTHREADS;i++){
         pthread_join(THREADS[i],NULL);
     }
-    printf("Half-Sorted array: \n");
-    printArray(a, DIM);
     int levels = log2((float)NTHREADS);
     for(j=levels;j>0;j--){
-        blocks =(2^(j-1));
+        blocks = (int)pow(2., (float)(j-1));
+        printf("blocks %d \n",blocks);
         for(i=0;i<blocks;i++){
+            printf("i is %d\n",i);
             thread_data_array[i].i=i;
-            thread_data_array[i].j=j;
+            thread_data_array[i].j=blocks;
             pthread_create(&THREADS[i],NULL, submerge, (void *)&thread_data_array[i]);
             }
         for(i=0;i<blocks;i++){
             pthread_join(THREADS[i],NULL);
         }
+        printf("half sorted i\n");
+        printArray(a, DIM);
         
     }
-    merge(a,0,(DIM-1)/2,DIM-1);
+    end = CLOCK();
+    printf("Time taken %f\n",end-start);
+    printf("Sortd Array\n");
     printArray(a, DIM);
+    printf("Time taken %f\n",end-start);
     return 0;
 }
