@@ -1,5 +1,11 @@
 #include <stdio.h>
+#include <omp.h>
+#include <math.h>
+#include <stdlib.h>
 #define N 3
+#define BS 2
+#define CHUNKSIZE 1
+#define min(a, b) (((a) < (b)) ? (a) : (b)) 
 void init(int A[][N])
 {
 
@@ -48,6 +54,28 @@ void lower_triangular_solver(float L[][N], float Z[N][N], float I[N][N])
        }
    }
 }
+void Forward_subst_blocked(float L[][N], float Z[N][N], float I[N][N])
+{
+   int i,j,jj,col;
+   int th_id;
+   int chunk = CHUNKSIZE;
+   #pragma omp parallel shared(Z,L,I,chunk) private(i,j,jj,col,th_id) num_threads(3)
+   {
+      th_id = omp_get_thread_num();
+      #pragma omp for schedule(dynamic,chunk) 
+      for(col=0; col<N;col++)
+      {
+         printf("Hello from thread %d, clmn %d\n",th_id,col);
+         for(i=0;i<N;i++)
+         {
+             Z[i][col] = I[i][col]; 
+             for(jj=0;jj<i;jj+=BS)
+                 for(j=jj;j<min(i,jj+BS);j++)
+                    Z[i][col]-=L[i][j]*Z[j][col];
+         }
+      }
+   }
+}
 void upper_triangular_solver(float U[N][N],float A_inv[N][N],float Z[N][N])
 {
     int i,j,col;
@@ -56,15 +84,40 @@ void upper_triangular_solver(float U[N][N],float A_inv[N][N],float Z[N][N])
         for(i=0;i<N;i++)
         {
             A_inv[N-i-1][col] = Z[N-i-1][col]/U[N-i-1][N-i-1];
+            
             for(j=0;j<i;j++)
                 A_inv[N-i-1][col]-=U[N-i-1][N-j-1]*A_inv[N-j-1][col]/U[N-i-1][N-i-1];
         }
     }
 
 } 
+void Backward_subst_blocked(float U[N][N],float A_inv[N][N],float Z[N][N]) 
+{
+    int i,j,jj,col;
+    int chunk=CHUNKSIZE;
+    int th_id;
+
+    #pragma omp parallel shared(A_inv,U,Z,chunk) private(th_id,i,j,jj,col)  num_threads(3)
+    {
+      th_id = omp_get_thread_num();
+      #pragma omp for schedule(dynamic,chunk) 
+      for(col=0; col<N;col++)
+      {
+        printf("Hello from thread %d, clmn %d\n",th_id,col);
+        for(i=0;i<N;i++)
+        {
+            A_inv[N-i-1][col] = Z[N-i-1][col]/U[N-i-1][N-i-1];
+            for(jj=0;jj<i;jj+=BS)
+                for(j=jj;j<min(i,jj+BS);j++)
+                    A_inv[N-i-1][col]-=U[N-i-1][N-j-1]*A_inv[N-j-1][col]/U[N-i-1][N-i-1];
+        }
+     }
+   }
+}
+
 int main()
 {
-    int A[N][N] = {1, 0, 2, 2, -1, 3, 4, 1, 8} ;
+    int A[N][N]= {1, 0, 2, 2, -1, 3, 4, 1, 8} ;
     //init(A);
     float L[N][N]={0.0}; 
     float U[N][N];
@@ -82,13 +135,15 @@ int main()
         for(j=0;j<N;j++)
             U[i][j] = A[i][j];
         }
+    print_mat(U); 
     LU_factorization(L, U);
     
-    lower_triangular_solver(L, Z, I);
-    print_mat(U);
-    printf("That was u\n Z is:\n");
-    print_mat(Z);
-    upper_triangular_solver(U,A_inv,Z);
+    Forward_subst_blocked(L, Z, I);
+    //print_mat(U);
+   // printf("That was u\n Z is:\n");
+   // print_mat(Z);
+    Backward_subst_blocked(U,A_inv,Z);
+    printf("The inverse is:\n");
     print_mat(A_inv);
     return 0;
 }
